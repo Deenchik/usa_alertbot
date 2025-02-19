@@ -1,28 +1,21 @@
 #!/bin/bash
 
-# Проверка на наличие Python3 и pip
-echo "🔍 Проверка наличия Python3 и pip..."
-if ! command -v python3 &>/dev/null; then
-    echo "❌ Python3 не установлен. Установите Python3 и повторите попытку."
-    exit 1
-fi
-
-if ! command -v pip3 &>/dev/null; then
-    echo "❌ pip3 не установлен. Установите pip3 и повторите попытку."
-    exit 1
-fi
-
 # Установка зависимостей
-echo "📦 Установка зависимостей..."
-pip3 install cryptography requests pandas python-telegram-bot python-dotenv
+echo "Установка зависимостей..."
+sudo apt-get update
+sudo apt-get install -y python3 python3-pip python3-venv npm
+sudo npm install -g pm2
+pip3 install -r requirements.txt
 
-# Генерация ключа шифрования, если он не существует
-if [ ! -f secret.key ]; then
-    echo "🔑 Генерация ключа шифрования..."
-    python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > secret.key
-    echo "✅ Ключ шифрования успешно сгенерирован."
-else
-    echo "✅ Ключ шифрования уже существует."
+# Установка ключа шифрования, если он еще не существует
+if [ ! -f "secret.key" ]; then
+    echo "🔐 Генерация ключа шифрования..."
+    python3 -c "
+from cryptography.fernet import Fernet
+key = Fernet.generate_key()
+with open('secret.key', 'wb') as key_file:
+    key_file.write(key)
+    "
 fi
 
 # Запрашиваем данные у пользователя
@@ -42,6 +35,7 @@ read CHAT_ID
 python3 -c "
 from cryptography.fernet import Fernet
 import base64
+import os
 
 # Загружаем ключ
 with open('secret.key', 'rb') as key_file:
@@ -64,44 +58,19 @@ with open('.env', 'a') as env_file:
 print('📝 Данные сохранены в .env в зашифрованном виде.')
 "
 
-# Проверка наличия файла .env
-if [ ! -f .env ]; then
-    echo "❌ Ошибка: .env не был создан."
-    exit 1
-else
-    echo "✅ Данные успешно сохранены в .env."
-fi
+# Запуск PM2 и добавление скрипта в автозагрузку
+echo "Настройка автозагрузки через PM2..."
 
-# Настройка автозагрузки (создание сервиса для systemd)
-echo "🛠 Настройка автозагрузки..."
-SERVICE_PATH="/etc/systemd/system/usa_alertbot.service"
+# Создаем виртуальное окружение и активируем его
+python3 -m venv venv
+source venv/bin/activate
 
-# Проверка существования сервиса
-if [ ! -f "$SERVICE_PATH" ]; then
-    echo "[Unit]
-Description=USA Alert Bot
-After=network.target
+# Запускаем скрипт usa_alertbot.py с помощью PM2
+pm2 start usa_alertbot.py --name usa_alertbot
 
-[Service]
-ExecStart=/usr/bin/python3 /path/to/your/usa_alertbot.py
-WorkingDirectory=/path/to/your/directory
-Restart=always
-User=$(whoami)
-Group=$(whoami)
-Environment=PATH=/usr/bin:/usr/local/bin
-Environment=PYTHONUNBUFFERED=1
+# Устанавливаем автозагрузку для PM2
+pm2 startup
+pm2 save
 
-[Install]
-WantedBy=multi-user.target" | sudo tee "$SERVICE_PATH" > /dev/null
-
-    # Перезагрузка systemd и запуск сервиса
-    sudo systemctl daemon-reload
-    sudo systemctl enable usa_alertbot.service
-    sudo systemctl start usa_alertbot.service
-
-    echo "✅ Сервис для автозагрузки настроен. Бот будет запускаться автоматически."
-else
-    echo "✅ Сервис уже настроен."
-fi
-
-echo "✅ Установка завершена!"
+echo "✅ Скрипт добавлен в автозагрузку через PM2."
+echo "💻 Ваш бот теперь будет запускаться при старте системы."
