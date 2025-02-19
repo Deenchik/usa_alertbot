@@ -1,75 +1,107 @@
 #!/bin/bash
 
-# Проверка запуска от root
-if [[ $EUID -ne 0 ]]; then
-   echo "❌ Скрипт должен выполняться от root!"
-   exit 1
+# Проверка на наличие Python3 и pip
+echo "🔍 Проверка наличия Python3 и pip..."
+if ! command -v python3 &>/dev/null; then
+    echo "❌ Python3 не установлен. Установите Python3 и повторите попытку."
+    exit 1
 fi
 
-echo "🚀 Установка зависимостей..."
-apt update && apt install -y python3 python3-pip python3-venv
+if ! command -v pip3 &>/dev/null; then
+    echo "❌ pip3 не установлен. Установите pip3 и повторите попытку."
+    exit 1
+fi
 
-echo "🔧 Настраиваю виртуальное окружение..."
-python3 -m venv venv
-source venv/bin/activate
-pip3 install cryptography python-dotenv requests asyncio pandas python-telegram-bot cryptography python-dotenv
+# Установка зависимостей
+echo "📦 Установка зависимостей..."
+pip3 install cryptography requests pandas python-telegram-bot python-dotenv
 
-echo "🔑 Генерация секретного ключа..."
-python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > secret.key
+# Генерация ключа шифрования, если он не существует
+if [ ! -f secret.key ]; then
+    echo "🔑 Генерация ключа шифрования..."
+    python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > secret.key
+    echo "✅ Ключ шифрования успешно сгенерирован."
+else
+    echo "✅ Ключ шифрования уже существует."
+fi
 
-echo "🔐 Введите учетные данные для шифрования..."
-read -p "Введите Foreman Email: " foreman_email
-read -p "Введите Foreman Password: " foreman_password
-read -p "Введите Telegram Token: " telegram_token
-read -p "Введите Telegram Chat ID: " chat_id
+# Запрашиваем данные у пользователя
+echo "Введите Foreman Email:"
+read FOREMAN_EMAIL
 
-echo "🛠️ Шифрование и сохранение в .env..."
-python3 - <<EOF
+echo "Введите Foreman Password:"
+read FOREMAN_PASSWORD
+
+echo "Введите Telegram Token:"
+read TELEGRAM_TOKEN
+
+echo "Введите Telegram Chat ID:"
+read CHAT_ID
+
+# Шифруем данные и записываем их в .env
+python3 -c "
 from cryptography.fernet import Fernet
-import os
+import base64
 
-# Читаем ключ
-with open("secret.key", "rb") as key_file:
+# Загружаем ключ
+with open('secret.key', 'rb') as key_file:
     key = key_file.read()
+
 cipher = Fernet(key)
 
-# Функция для шифрования
-def encrypt(value):
-    return cipher.encrypt(value.encode()).decode()
+# Функция шифрования
+def encrypt_value(value):
+    encrypted_value = cipher.encrypt(value.encode())
+    return base64.urlsafe_b64encode(encrypted_value).decode()
 
-env_data = f"FOREMAN_EMAIL={encrypt('$foreman_email')}\n" \
-           f"FOREMAN_PASSWORD={encrypt('$foreman_password')}\n" \
-           f"TELEGRAM_TOKEN={encrypt('$telegram_token')}\n" \
-           f"CHAT_ID={encrypt('$chat_id')}\n"
+# Запись зашифрованных данных в .env
+with open('.env', 'a') as env_file:
+    env_file.write(f'FOREMAN_EMAIL={encrypt_value(\"$FOREMAN_EMAIL\")}\n')
+    env_file.write(f'FOREMAN_PASSWORD={encrypt_value(\"$FOREMAN_PASSWORD\")}\n')
+    env_file.write(f'TELEGRAM_TOKEN={encrypt_value(\"$TELEGRAM_TOKEN\")}\n')
+    env_file.write(f'CHAT_ID={encrypt_value(\"$CHAT_ID\")}\n')
 
-with open(".env", "w") as env_file:
-    env_file.write(env_data)
+print('📝 Данные сохранены в .env в зашифрованном виде.')
+"
 
-print("✅ Данные успешно зашифрованы и сохранены в .env")
-EOF
+# Проверка наличия файла .env
+if [ ! -f .env ]; then
+    echo "❌ Ошибка: .env не был создан."
+    exit 1
+else
+    echo "✅ Данные успешно сохранены в .env."
+fi
 
-echo "⚙️ Настраиваю сервис systemd..."
-cat <<EOT > /etc/systemd/system/usa_alertbot.service
-[Unit]
+# Настройка автозагрузки (создание сервиса для systemd)
+echo "🛠 Настройка автозагрузки..."
+SERVICE_PATH="/etc/systemd/system/usa_alertbot.service"
+
+# Проверка существования сервиса
+if [ ! -f "$SERVICE_PATH" ]; then
+    echo "[Unit]
 Description=USA Alert Bot
 After=network.target
 
 [Service]
-ExecStart=$(pwd)/venv/bin/python3 $(pwd)/usa_alertbot.py
-WorkingDirectory=$(pwd)
+ExecStart=/usr/bin/python3 /path/to/your/usa_alertbot.py
+WorkingDirectory=/path/to/your/directory
 Restart=always
-User=root
+User=$(whoami)
+Group=$(whoami)
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
-WantedBy=multi-user.target
-EOT
+WantedBy=multi-user.target" | sudo tee "$SERVICE_PATH" > /dev/null
 
-echo "🔄 Перезапуск systemd и включение автозапуска..."
-systemctl daemon-reload
-systemctl enable usa_alertbot.service
-systemctl start usa_alertbot.service
+    # Перезагрузка systemd и запуск сервиса
+    sudo systemctl daemon-reload
+    sudo systemctl enable usa_alertbot.service
+    sudo systemctl start usa_alertbot.service
 
-echo "🚀 Запуск usa_alertbot.py..."
-./venv/bin/python3 usa_alertbot.py
+    echo "✅ Сервис для автозагрузки настроен. Бот будет запускаться автоматически."
+else
+    echo "✅ Сервис уже настроен."
+fi
 
 echo "✅ Установка завершена!"

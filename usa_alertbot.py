@@ -1,78 +1,43 @@
+import os
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+import logging
+import base64
 import asyncio
 import requests
 import pandas as pd
 from io import StringIO
 from telegram import Bot
-import logging
-import os
-import base64
-from cryptography.fernet import Fernet
-from dotenv import load_dotenv
-from pathlib import Path
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Пути к файлам
-ENV_PATH = Path(".env")
-KEY_PATH = Path("secret.key")
+ENV_PATH = ".env"
+KEY_PATH = "secret.key"
 
 # Функции для шифрования/дешифровки
-
-def generate_key():
-    key = Fernet.generate_key()
-    with open(KEY_PATH, "wb") as key_file:
-        key_file.write(key)
-
 def load_key():
     return open(KEY_PATH, "rb").read()
-
-def encrypt_value(value, key):
-    f = Fernet(key)
-    encrypted_value = f.encrypt(value.encode())
-    return base64.urlsafe_b64encode(encrypted_value).decode()
 
 def decrypt_value(encrypted_value, key):
     f = Fernet(key)
     decrypted_value = f.decrypt(base64.urlsafe_b64decode(encrypted_value.encode()))
     return decrypted_value.decode()
 
-# Создание ключа шифрования, если его нет
-if not KEY_PATH.exists():
-    generate_key()
+# Загружаем ключ
 KEY = load_key()
 
 # Загрузка .env
-load_dotenv()
+load_dotenv(ENV_PATH)
 
-# Запись в .env без кавычек
-def save_encrypted_env_var(key_name, value):
-    encrypted_value = encrypt_value(value, KEY)
-    # Убираем кавычки вручную
-    encrypted_value = encrypted_value.strip("'")  # Убираем кавычки
-    # Сохраняем значение без кавычек
-    with open(ENV_PATH, "a") as env_file:
-        env_file.write(f"{key_name}={encrypted_value}\n")
-    env_file.close()  # Явно закрываем файл после записи
-
+# Загрузка и расшифровка данных
 def load_decrypted_env_var(key_name):
     encrypted_value = os.getenv(key_name)
     if encrypted_value:
         return decrypt_value(encrypted_value, KEY)
     return None
-
-# Запрос данных у пользователя при первом запуске
-if not ENV_PATH.exists():
-    logger.info("🔐 Запрашиваю учетные данные для Foreman и Telegram...")
-    save_encrypted_env_var("FOREMAN_EMAIL", input("Введите Foreman Email: "))
-    save_encrypted_env_var("FOREMAN_PASSWORD", input("Введите Foreman Password: "))
-    save_encrypted_env_var("TELEGRAM_TOKEN", input("Введите Telegram Token: "))
-    save_encrypted_env_var("CHAT_ID", input("Введите Telegram Chat ID: "))
-    logger.info("📝 Данные сохранены в .env")
-
-# Принудительное чтение .env после записи
-load_dotenv()
 
 # Загрузка расшифрованных данных
 FOREMAN_EMAIL = load_decrypted_env_var("FOREMAN_EMAIL")
@@ -85,6 +50,9 @@ if not all([FOREMAN_EMAIL, FOREMAN_PASSWORD, TELEGRAM_TOKEN, CHAT_ID]):
     logger.error("❌ Ошибка загрузки учетных данных. Перезапустите бота и введите данные заново.")
     exit(1)
 
+logger.info("✅ Данные успешно расшифрованы и загружены.")
+
+# Константы для работы с Foreman
 FOREMAN_LOGIN_URL = "https://dashboard.foreman.mn/login/"
 FOREMAN_CSV_URL = "https://dashboard.foreman.mn/dashboard/miners-csv/?search="
 
