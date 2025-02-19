@@ -1,59 +1,57 @@
 #!/bin/bash
 
-# Убедимся, что мы запускаем скрипт от имени root
+# Выход при ошибке
+set -e
+
+# Проверка на запуск от root
 if [ "$(id -u)" -ne 0 ]; then
-  echo "Пожалуйста, запустите этот скрипт с правами суперпользователя (root)."
-  exit 1
+    echo "❌ Скрипт должен быть запущен от root! Используйте: sudo ./install.sh"
+    exit 1
 fi
 
-# Обновление и установка необходимых пакетов
-echo "Обновляем систему и устанавливаем необходимые пакеты..."
+echo "🚀 Установка зависимостей..."
+
+# Обновление пакетов и установка Python, pip, virtualenv
 apt update && apt upgrade -y
-apt install -y \
-    python3 python3-pip python3-venv \
-    git curl
+apt install -y python3 python3-pip python3-venv
 
-# Клонируем репозиторий с GitHub
-echo "Клонируем репозиторий с GitHub..."
-cd /opt
-git clone https://github.com/Denchete/usa_alertbot.git usa_alertbot
-cd usa_alertbot
+# Создание виртуального окружения (если его нет)
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
 
-# Создание виртуального окружения
-python3 -m venv venv
+# Активация виртуального окружения
 source venv/bin/activate
 
-# Устанавливаем зависимости
-pip install requests pandas python-telegram-bot cryptography python-dotenv
+# Установка зависимостей
+pip install --upgrade pip
+pip install asyncio requests pandas python-telegram-bot cryptography python-dotenv
 
-# Добавляем скрипт в автозагрузку (systemd)
-echo "Настроим автозагрузку..."
-cat > /etc/systemd/system/usa_alertbot.service <<EOL
+echo "✅ Установка завершена."
+
+# Создание systemd-сервиса для автозапуска
+SERVICE_PATH="/etc/systemd/system/usa_alertbot.service"
+
+echo "🛠️ Настройка автозапуска..."
+
+cat <<EOF > $SERVICE_PATH
 [Unit]
-Description=USA Alertbot
+Description=USA Alert Bot
 After=network.target
 
 [Service]
-ExecStart=/opt/usa_alertbot/venv/bin/python /opt/usa_alertbot/usa_alertbot.py
-WorkingDirectory=/opt/usa_alertbot
-Environment=PATH=/opt/usa_alertbot/venv/bin:/usr/bin:/bin
-Environment=VIRTUAL_ENV=/opt/usa_alertbot/venv
-User=root
-Group=root
+ExecStart=$(pwd)/venv/bin/python3 $(pwd)/usa_alertbot.py
+WorkingDirectory=$(pwd)
 Restart=always
+User=root
 
 [Install]
 WantedBy=multi-user.target
-EOL
+EOF
 
-# Перезагружаем systemd и активируем сервис
-echo "Перезагружаем systemd и активируем сервис..."
+# Перезагрузка systemd и запуск сервиса
 systemctl daemon-reload
 systemctl enable usa_alertbot.service
 systemctl start usa_alertbot.service
 
-# Проверяем статус сервиса
-echo "Проверим статус сервиса..."
-systemctl status usa_alertbot.service
-
-echo "Установка завершена! Бот будет автоматически запускаться при старте системы."
+echo "✅ Бот добавлен в автозапуск и запущен!"
