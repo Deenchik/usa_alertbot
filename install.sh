@@ -5,7 +5,7 @@ echo "Установка зависимостей..."
 sudo apt-get update
 sudo apt-get install -y python3 python3-pip python3-venv npm
 sudo npm install -g pm2
-pip3 install -r requirements.txt
+pip3 install cryptography requests pandas python-telegram-bot python-dotenv
 
 # Установка ключа шифрования, если он еще не существует
 if [ ! -f "secret.key" ]; then
@@ -65,8 +65,8 @@ echo "Настройка автозагрузки через PM2..."
 python3 -m venv venv
 source venv/bin/activate
 
-# Запускаем скрипт usa_alertbot.py с помощью PM2
-pm2 start usa_alertbot.py --name usa_alertbot
+# Запускаем программу usa_alertbot.py с помощью PM2
+pm2 start ecosystem.config.js
 
 # Устанавливаем автозагрузку для PM2
 pm2 startup
