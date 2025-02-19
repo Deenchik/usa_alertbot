@@ -16,7 +16,7 @@ apt install -y \
 # Клонируем репозиторий с GitHub
 echo "Клонируем репозиторий с GitHub..."
 cd /opt
-git clone https://github.com/yourusername/your-repo.git usa_alertbot
+git clone https://github.com/Denchete/usa_alertbot.git usa_alertbot
 cd usa_alertbot
 
 # Создание виртуального окружения
